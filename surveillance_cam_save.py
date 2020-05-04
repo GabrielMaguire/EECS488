@@ -6,7 +6,6 @@ import time
 import imutils
 import cv2
 import numpy as np
-import send_email
 
 ############################ INITIALIZATIONS ############################
 # Load haar cascades
@@ -51,7 +50,6 @@ def main():
     tolerance = 30
     extra_frames = 10
     approach_count = 0
-    target_frame_count = 15
 
     while (True):
         
@@ -71,8 +69,6 @@ def main():
                 if (extra_frames < 0):
                     recorder = None
                     extra_frames = 10
-                    print("System status: recording stopped")
-                    send_email.send_email(vid_name)
                 
         else:
             rectext = "OFF"
@@ -87,7 +83,7 @@ def main():
         found, and all faces found inside the area of the bodies.
         '''
         ################## HAAR CASCADE CALCULATION ####################
-        bodies = upper_body_cascade.detectMultiScale(gray, 1.2, 5)
+        bodies = upper_body_cascade.detectMultiScale(gray, 1.2, 7)
         for (x, y, w, h) in bodies:
             cv2.rectangle(image, (x, y), (x+w, y+h), (0, 0, 255), 2)
             text = "Occupied"
@@ -97,43 +93,42 @@ def main():
                     target = [x, y, w, h]
                     print("Target initialized")
             elif (x < target[0] + tolerance and x > target[0] - tolerance and y < target[1] + tolerance and y > target[1] - tolerance and w > 65 and h > 50):
-                target_frame_count = 15
                 target = [x, y, w, h]
                 track_target.append(h)
                 if (len(track_target) >= 5):
                     average_height = sum(track_target) / len(track_target)
                     avg_target.append(average_height)
                     track_target = []
-                    # ~ print(avg_target[-1])
+                    print(avg_target[-1])
                     if (len(avg_target) > 2):
-                        if (avg_target[-1] > 2 + avg_target[-2]):
+                        if (avg_target[-1] > 3 + avg_target[-2]):
                             approach_count = approach_count + 1
                             approach = True
                             movtext = "APPROACHING"
-                            print("System status: target APPROACHING")
+                            print("APPROACHING")
                             if (approach_count == 2):
                                 image_name = datetime.now().strftime("%Y%b%d_%H:%M:%S") + ".jpg"
                                 cv2.imwrite(os.path.join(images_dir, image_name), image)
-                                print("System status: image captured")
                             if (approach_count > 2 and not recorder):
                                 vid_name = os.path.join(video_dir, datetime.now().strftime("Rec_%Y%b%d_%H.%M.%S") + ".avi")
                                 recorder = cv2.VideoWriter(vid_name, VIDEO_TYPE['avi'], 7, STD_DIMENSIONS["480p"])
-                                print("System status: recording started")
                         else:
                             approach_count = 0
                             approach = False
                             movtext = "NOT APPROACHING"
-                            print("System status: target not approaching")
+                            print("NOT APPROACHING")
+                                
+            else:
+                print("---")
                 
-        target_frame_count = target_frame_count - 1
-        if (target_frame_count < 0):
-            approach = False
+        
+        
         
         
         
         # Display the video feed with additions of body detection
         # ~ cv2.putText(image, "Room Status: {}".format(text), (10,20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.putText(image, "Subject Movement: {}".format(movtext), (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        cv2.putText(image, "Subject Movement: {}".format(movtext), (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         # ~ cv2.putText(image, "Recording: {}".format(rectext), (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         cv2.imshow('Video Feed',image)    # title of the window
         
@@ -160,6 +155,7 @@ def main():
             print("STOP RECORDING")
             
         
+        
         # Calculate total frame processing time
         end_time = time.time()
         delta_time = round(end_time - start_time, 3)
@@ -170,6 +166,6 @@ def main():
         recorder.release()
     cap.release()
     
-print("System status: ONLINE")
+
 main()
 cv2.destroyAllWindows()
