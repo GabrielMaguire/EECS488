@@ -6,7 +6,7 @@ import time
 import imutils
 import cv2
 import numpy as np
-import send_email
+import subprocess
 
 ############################ INITIALIZATIONS ############################
 # Load haar cascades
@@ -16,6 +16,8 @@ upper_body_cascade = cv2.CascadeClassifier('haarcascade_upperbody.xml')
 
 # Preset frame dimensions
 STD_DIMENSIONS = {
+    "144p": (256, 144),
+    "240p": (426, 240),
     "480p": (640, 480),
     "720p": (1280, 720),
     "1080p": (1920, 1080),
@@ -35,23 +37,28 @@ video_dir = "videos/"
 # Initialize camera
 cap = cv2.VideoCapture(0)
 
+def send_email(f):
+    process = subprocess.Popen(['nohup', 'python3', 'send_email.py', f])
+    print("System status: email sent")
 
 def main():
     
     recorder = None
     
     frame_count = 0
-    movtext = "N/A"
+    movtext = ""
     rectext = "OFF"
     approach = False
+    detect = False
     
     target = []
     track_target = []
     avg_target = []
-    tolerance = 30
-    extra_frames = 10
+    tolerance = 20
+    extra_frames = 50
     approach_count = 0
-    target_frame_count = 15
+    target_frame_count = 50
+    detect_buffer = 40
 
     while (True):
         
@@ -72,14 +79,15 @@ def main():
                     recorder = None
                     extra_frames = 10
                     print("System status: recording stopped")
-                    send_email.send_email(vid_name)
+                    send_email(vid_name)
                 
         else:
             rectext = "OFF"
         
         # resize the frame, convert it to grayscale
-        image = imutils.resize(image, width=500)
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        # ~ image = imutils.resize(image, width=500)
+        image_small = cv2.resize(image, (256, 192), interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(image_small, cv2.COLOR_BGR2GRAY)
         
         
         '''
@@ -88,54 +96,70 @@ def main():
         '''
         ################## HAAR CASCADE CALCULATION ####################
         bodies = upper_body_cascade.detectMultiScale(gray, 1.2, 5)
+        if (len(bodies) > 0):
+            detect = True
+            detect_buffer = 40
+        else:
+            detect = False
+            detect_buffer = detect_buffer - 1
+            if (detect_buffer < 0):
+                movtext = ""
+                target = []
+                detect_buffer = 40
+        
         for (x, y, w, h) in bodies:
-            cv2.rectangle(image, (x, y), (x+w, y+h), (0, 0, 255), 2)
-            text = "Occupied"
-            height = h
             if not target:
-                if (w > 65 and h > 50):
+                if (w > 25 and h > 20 and y < 150):
                     target = [x, y, w, h]
-                    print("Target initialized")
-            elif (x < target[0] + tolerance and x > target[0] - tolerance and y < target[1] + tolerance and y > target[1] - tolerance and w > 65 and h > 50):
-                target_frame_count = 15
+                    new_box = [int(round(i * 2.5)) for i in (x, y, w, h)]
+                    cv2.rectangle(image, (new_box[0], new_box[1]), (new_box[0]+new_box[2], new_box[1]+new_box[3]), (0, 0, 255), 2)
+                    print("System status: target initialized")
+                    print(target)
+            elif (x < target[0] + tolerance and x > target[0] - tolerance and y < target[1] + tolerance and y > target[1] - tolerance and w > 25 and h > 20):
+                cv2.rectangle(image_small, (x, y), (x+w, y+h), (0, 0, 255), 2)
+                new_box = [int(round(i * 2.5)) for i in (x, y, w, h)]
+                cv2.rectangle(image, (new_box[0], new_box[1]), (new_box[0]+new_box[2], new_box[1]+new_box[3]), (0, 0, 255), 2)
+                target_frame_count = 50
                 target = [x, y, w, h]
                 track_target.append(h)
-                if (len(track_target) >= 5):
+                if (len(track_target) >= 10):
                     average_height = sum(track_target) / len(track_target)
                     avg_target.append(average_height)
                     track_target = []
-                    # ~ print(avg_target[-1])
+                    print(avg_target[-1])
                     if (len(avg_target) > 2):
-                        if (avg_target[-1] > 2 + avg_target[-2]):
+                        if (avg_target[-1] > 0.5 + avg_target[-2]):
                             approach_count = approach_count + 1
                             approach = True
                             movtext = "APPROACHING"
                             print("System status: target APPROACHING")
-                            if (approach_count == 2):
+                            if (approach_count == 3):
                                 image_name = datetime.now().strftime("%Y%b%d_%H:%M:%S") + ".jpg"
                                 cv2.imwrite(os.path.join(images_dir, image_name), image)
                                 print("System status: image captured")
-                            if (approach_count > 2 and not recorder):
+                            if (approach_count > 3 and not recorder):
                                 vid_name = os.path.join(video_dir, datetime.now().strftime("Rec_%Y%b%d_%H.%M.%S") + ".avi")
-                                recorder = cv2.VideoWriter(vid_name, VIDEO_TYPE['avi'], 7, STD_DIMENSIONS["480p"])
+                                recorder = cv2.VideoWriter(vid_name, VIDEO_TYPE['avi'], 11, STD_DIMENSIONS["480p"])
                                 print("System status: recording started")
                         else:
                             approach_count = 0
                             approach = False
                             movtext = "NOT APPROACHING"
                             print("System status: target not approaching")
+            else:
+                print("---")
                 
         target_frame_count = target_frame_count - 1
         if (target_frame_count < 0):
             approach = False
         
         
+        resized_image = cv2.resize(image, (1280, 960), interpolation=cv2.INTER_AREA)
         
         # Display the video feed with additions of body detection
-        # ~ cv2.putText(image, "Room Status: {}".format(text), (10,20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.putText(image, "Subject Movement: {}".format(movtext), (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        cv2.putText(resized_image, "Subject Movement: {}".format(movtext), (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         # ~ cv2.putText(image, "Recording: {}".format(rectext), (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-        cv2.imshow('Video Feed',image)    # title of the window
+        cv2.imshow('Video Feed', resized_image)    # title of the window
         
         
         ################### KEYBOARD INPUT HANDLING ####################
@@ -151,7 +175,7 @@ def main():
             
         elif key == ord("v"):
             vid_name = os.path.join(video_dir, datetime.now().strftime("Rec_%Y%b%d_%H:%M:%S") + ".avi")
-            recorder = cv2.VideoWriter(vid_name, VIDEO_TYPE['avi'], 7, STD_DIMENSIONS["480p"])
+            recorder = cv2.VideoWriter(vid_name, VIDEO_TYPE['avi'], 11, STD_DIMENSIONS["480p"])
             rec_flag = True      # video write
             print("START RECORDING: " + vid_name)
             
