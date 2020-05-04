@@ -1,3 +1,4 @@
+import sys
 import smtplib
 import config_email
 from email.message import EmailMessage
@@ -45,4 +46,5 @@ def send_email(f):
 	
 	print("Email alert nofication sent.")
 
-# ~ send_email("videos/Rec_2020May03_15.31.34.avi")
+video_name = sys.argv[1]
+send_email(video_name)
